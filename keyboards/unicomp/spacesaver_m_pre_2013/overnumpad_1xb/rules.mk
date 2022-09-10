@@ -15,3 +15,5 @@ KEYBOARD_SHARED_EP = yes    # Free up some extra endpoints - needed if console+m
 
 HAPTIC_ENABLE = yes
 HAPTIC_DRIVER = SOLENOID
+EEPROM_DRIVER = i2c
+I2C_MASTER_DRIVER = bitbang
