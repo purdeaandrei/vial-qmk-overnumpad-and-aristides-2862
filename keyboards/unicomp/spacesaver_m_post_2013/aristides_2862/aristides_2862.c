@@ -14,11 +14,28 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "overnumpad_1xb.h"
+#include "quantum.h"
 
 void keyboard_post_init_kb(void)
 {
-    //debug_enable=true;
-    //debug_matrix=true;
+    // Led pins:
+    // GP4 is the left-most led, normally Num Lock, but on Spacesaver M it's Caps Lock. Configured in info.json
+    writePin(GP3, 1);
+    setPinOutput(GP3); // middle led, always off on Spacesaver M
+
+    writePin(GP2, 1);
+    setPinOutput(GP2); // right-most led, normally Scroll Lock, but on Spacesaver M indicates function layer
 }
 
+
+layer_state_t layer_state_set_kb(layer_state_t state) {
+    switch (get_highest_layer(state)) {
+        case 0:
+            writePin(GP2, 1);
+            break;
+        default:
+            writePin(GP2, 0);
+            break;
+    }
+     return layer_state_set_user(state);
+}

@@ -1,4 +1,4 @@
-/* Copyright 2020 Purdea Andrei
+/* Copyright 2023 Purdea Andrei
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,11 +14,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "overnumpad_1xb.h"
+#include <hardware/gpio.h>
+#include <hardware/structs/pads_qspi.h>
 
-void keyboard_post_init_kb(void)
-{
-    //debug_enable=true;
-    //debug_matrix=true;
+void matrix_init_custom_configure_drive_strengths(void) {
+    for (int gpio=0;gpio<NUM_BANK0_GPIOS;gpio++) {
+        gpio_set_drive_strength(gpio, GPIO_DRIVE_STRENGTH_2MA);
+    }
+
+    for (int gpio=0;gpio<NUM_QSPI_GPIOS;gpio++) {
+        pads_qspi_hw->io[gpio] &= ~((3 << 4) | (1 << 0));
+    }
 }
-
