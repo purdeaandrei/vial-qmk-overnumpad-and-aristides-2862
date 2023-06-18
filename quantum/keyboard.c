@@ -457,6 +457,100 @@ static inline void generate_tick_event(void) {
     }
 }
 
+static bool process_keypress;
+
+static void deghost_exec(uint32_t row, uint32_t col, bool pressed) {
+    if (process_keypress) {
+        action_exec(MAKE_KEYEVENT(row, col, pressed));
+    }
+
+    switch_events(row, col, pressed);
+}
+
+#ifdef DEGHOST_ADVANCED
+
+uint8_t key_status[MATRIX_ROWS][MATRIX_COLS];
+
+#define KEY_STATUS_FORCE_NOT_RECHECK (1 << 2)
+#define KEY_STATUS_REPORTED_AS_PRESSED_MASK (1 << 1)
+#define KEY_STATUS_SEEN_AS_PRESSED_MASK 1
+#define CNT_KEY_STATUS_SEEN_AS_PRESSED(value) ((value)&1)
+#define WAS_KEY_STATUS_GHOSTING_BEFORE(value) ((value) == 1)
+#define KEY(row, col) key_status[row][col]
+#define EXISTS(row, col) (!!pgm_read_byte(&keymaps[0][row][col]))
+
+static void deghost_advanced(uint32_t row, uint32_t col, bool pressed) {
+    if (!EXISTS(row, col))
+        return;
+    if (pressed) {
+        KEY(row, col) |= KEY_STATUS_SEEN_AS_PRESSED_MASK;
+        bool ghosting = false;
+        for (uint32_t orow = 0; (orow < MATRIX_ROWS) && !ghosting; orow++) {
+            if (orow == row || !EXISTS(orow, col))
+                continue;
+            const int other_row_pressed = CNT_KEY_STATUS_SEEN_AS_PRESSED(KEY(orow, col));
+            for (uint32_t ocol = 0; ocol < MATRIX_COLS; ocol++) {
+                if (ocol == col || (!EXISTS(row, ocol)) || (!EXISTS(orow, ocol)))
+                    continue;
+                const int pressed_in_rectangle = 1 + other_row_pressed +
+                                                 CNT_KEY_STATUS_SEEN_AS_PRESSED(KEY(row, ocol)) +
+                                                 CNT_KEY_STATUS_SEEN_AS_PRESSED(KEY(orow, ocol));
+                if (pressed_in_rectangle > 2) {
+                    ghosting = true;
+                    break;
+                }
+            }
+        }
+        if (!ghosting) {
+            KEY(row, col) |= KEY_STATUS_REPORTED_AS_PRESSED_MASK;
+            deghost_exec(row, col, pressed);
+        }
+    } else {
+        if (KEY(row, col) & KEY_STATUS_REPORTED_AS_PRESSED_MASK) {
+            KEY(row, col) = 0;
+            deghost_exec(row, col, pressed);
+        } else {
+            KEY(row, col) = 0;
+        }
+        for (uint32_t orow = 0; (orow < MATRIX_ROWS); orow++) {
+            if (orow == row || !EXISTS(orow, col))
+                continue;
+            const int other_row_pressed = CNT_KEY_STATUS_SEEN_AS_PRESSED(KEY(orow, col));
+            int check_orow_col = WAS_KEY_STATUS_GHOSTING_BEFORE(KEY(orow, col));
+            for (uint32_t ocol = 0; ocol < MATRIX_COLS; ocol++) {
+                if (ocol == col || (!EXISTS(row, ocol)) || (!EXISTS(orow, ocol)))
+                    continue;
+                const int pressed_in_rectangle = 0 + other_row_pressed +
+                                                 CNT_KEY_STATUS_SEEN_AS_PRESSED(KEY(row, ocol)) +
+                                                 CNT_KEY_STATUS_SEEN_AS_PRESSED(KEY(orow, ocol));
+                if (pressed_in_rectangle == 2) {
+                    if (WAS_KEY_STATUS_GHOSTING_BEFORE(KEY(row, ocol))) {
+                        deghost_advanced(row, ocol, true);
+                        KEY(row, ocol) |=
+                            KEY_STATUS_FORCE_NOT_RECHECK; // optimization, next
+                                                          // WAS_KEY_STATUS_GHOSTING_BEFORE()
+                                                          // call will be false
+                    }
+                    if (WAS_KEY_STATUS_GHOSTING_BEFORE(KEY(orow, ocol))) {
+                        deghost_advanced(orow, ocol, true);
+                    }
+                    if (check_orow_col) {
+                        deghost_advanced(orow, col, true);
+                        check_orow_col = 0; // for optimization
+                    }
+                }
+            }
+        }
+        for (uint32_t ocol = 0; ocol < MATRIX_COLS; ocol++) {
+            KEY(row, ocol) &= ~KEY_STATUS_FORCE_NOT_RECHECK;
+        }
+    }
+}
+#endif
+
+
+
+
 /**
  * @brief This task scans the keyboards matrix and processes any key presses
  * that occur.
@@ -486,26 +580,31 @@ static bool matrix_task(void) {
         matrix_print();
     }
 
-    const bool process_keypress = should_process_keypress();
+    process_keypress = should_process_keypress();
 
     for (uint8_t row = 0; row < MATRIX_ROWS; row++) {
         const matrix_row_t current_row = matrix_get_row(row);
         const matrix_row_t row_changes = current_row ^ matrix_previous[row];
 
+    #ifdef DEGHOST_ADVANCED
+        if (!row_changes) {
+            continue;
+        }
+    #else
         if (!row_changes || has_ghost_in_row(row, current_row)) {
             continue;
         }
+    #endif
 
         matrix_row_t col_mask = 1;
         for (uint8_t col = 0; col < MATRIX_COLS; col++, col_mask <<= 1) {
             if (row_changes & col_mask) {
                 const bool key_pressed = current_row & col_mask;
-
-                if (process_keypress) {
-                    action_exec(MAKE_KEYEVENT(row, col, key_pressed));
-                }
-
-                switch_events(row, col, key_pressed);
+                #ifdef DEGHOST_ADVANCED
+                deghost_advanced(row, col, key_pressed);
+                #else
+                deghost_exec(row, col, key_pressed);
+                #endif
             }
         }
 
