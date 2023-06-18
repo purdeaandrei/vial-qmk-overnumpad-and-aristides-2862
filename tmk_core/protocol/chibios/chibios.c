@@ -49,6 +49,8 @@
 #include "suspend.h"
 #include "wait.h"
 
+#define USB_GETSTATUS_REMOTE_WAKEUP_ENABLED (2U)
+
 /* -------------------------
  *   TMK host driver defs
  * -------------------------
@@ -186,7 +188,7 @@ void protocol_pre_task(void) {
         dprintln("suspending keyboard");
         while (USB_DRIVER.state == USB_SUSPENDED) {
             suspend_power_down();
-            if (suspend_wakeup_condition()) {
+            if ((USB_DRIVER.status & USB_GETSTATUS_REMOTE_WAKEUP_ENABLED) && suspend_wakeup_condition()) {
                 /* issue a remote wakeup event to the host which should resume
                  * the bus and get our keyboard out of suspension. */
                 usbWakeupHost(&USB_DRIVER);
